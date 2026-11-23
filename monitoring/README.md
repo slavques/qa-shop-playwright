@@ -1,6 +1,6 @@
 # Мониторинг QA Shop
 
-Prometheus опрашивает `shop:3000/metrics` каждые 15 секунд и хранит данные 14 дней.
+Prometheus опрашивает `shop:3000/metrics` каждые 15 секунд. Для хранилища задан срок в 14 дней и предел размера блоков в 256 МБ.
 Grafana автоматически загружает источник данных и дашборд **QA Shop · Мониторинг**.
 
 ## Запуск
@@ -33,13 +33,15 @@ docker compose -f deploy/compose.shop.yml -f monitoring/compose.yml up -d --buil
 ## Проверка конфигурации
 
 ```bash
-docker run --rm --entrypoint /bin/promtool \
-  -v "$PWD/monitoring/prometheus:/rules:ro" \
-  prom/prometheus:v3.16.0 check config /rules/prometheus.yml
+docker compose -f deploy/compose.shop.yml -f monitoring/compose.yml \
+  run --rm --no-deps --entrypoint /bin/promtool prometheus \
+  check config /etc/prometheus/prometheus.yml
 
-docker run --rm --entrypoint /bin/promtool \
-  -v "$PWD/monitoring/prometheus:/rules:ro" \
-  prom/prometheus:v3.16.0 test rules /rules/alerts.test.yml
+docker compose -f deploy/compose.shop.yml -f monitoring/compose.yml \
+  run --rm --no-deps --entrypoint /bin/promtool prometheus \
+  test rules /etc/prometheus/alerts.test.yml
 ```
 
 После запуска проверьте `http://localhost:13000/api/health`, затем откройте внешнюю ссылку в приватном окне. Сбор метрик должен быть зелёным. Откройте каталог и подождите два цикла опроса, чтобы появились данные трафика и задержки. Оформления и регистрации выполняйте на демонстрационном экземпляре с вымышленными данными.
+
+Для размещения Grafana и Prometheus в одном контейнере см. [вариант для демонстрационного хостинга](hosted/README.md).

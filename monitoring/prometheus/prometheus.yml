@@ -6,8 +6,15 @@ global:
 rule_files:
   - alerts.yml
 
+storage:
+  tsdb:
+    retention:
+      time: 14d
+      size: 256MB
+
 scrape_configs:
   - job_name: qa-shop
+    scheme: http
     metrics_path: /metrics
     static_configs:
       - targets: ["shop:3000"]

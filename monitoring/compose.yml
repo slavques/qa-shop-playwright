@@ -1,18 +1,24 @@
 services:
   prometheus:
-    image: prom/prometheus:v3.16.0
+    build:
+      context: ../monitoring
+      dockerfile_inline: |
+        FROM prom/prometheus:v3.16.0
+        COPY prometheus/prometheus.yml prometheus/alerts.yml prometheus/alerts.test.yml /etc/prometheus/
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=14d
     volumes:
-      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:13.3.1
+    build:
+      context: ../monitoring
+      dockerfile_inline: |
+        FROM grafana/grafana:13.3.1
+        COPY grafana/provisioning/ /etc/grafana/provisioning/
+        COPY grafana/dashboards/ /opt/qa-shop/dashboards/
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set a unique Grafana admin password}
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:${GRAFANA_PORT:-13000}}
@@ -22,12 +28,10 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       PROMETHEUS_URL: http://prometheus:9090
-      GRAFANA_DASHBOARDS_PATH: /var/lib/grafana/dashboards
+      GRAFANA_DASHBOARDS_PATH: /opt/qa-shop/dashboards
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-13000}:3000"
     volumes:
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     restart: unless-stopped
 
