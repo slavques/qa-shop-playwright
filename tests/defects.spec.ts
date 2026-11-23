@@ -1,10 +1,11 @@
-import { expect, test, type Request } from '@playwright/test';
+import { expect, test, type Page, type Request } from '@playwright/test';
 import {
   addFromCatalog,
   openCatalog,
   openCheckout,
   openProduct,
   products,
+  rubles,
   showCart,
 } from './support/shop';
 
@@ -12,6 +13,37 @@ function gate() {
   let release!: () => void;
   const wait = new Promise<void>(resolve => { release = resolve; });
   return { wait, release };
+}
+
+async function delayRequest(page: Page, matches: (url: URL) => boolean) {
+  const intercepted = gate();
+  const release = gate();
+  const settled = gate();
+  const markSettled = (request: Request) => {
+    if (matches(new URL(request.url()))) settled.release();
+  };
+
+  await page.route(matches, async route => {
+    intercepted.release();
+    await release.wait;
+    try {
+      await route.continue();
+    } catch (error) {
+      // Cancellation of a superseded request is also valid behavior.
+      if (!route.request().failure()) throw error;
+    }
+  });
+  page.on('requestfinished', markSettled);
+  page.on('requestfailed', markSettled);
+
+  return { intercepted: intercepted.wait, release: release.release, settled: settled.wait };
+}
+
+async function waitForPaint(page: Page) {
+  // Let the browser paint any update queued by the settled request.
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
 }
 
 test.describe('Регрессии по известным дефектам', () => {
@@ -32,9 +64,10 @@ test.describe('Регрессии по известным дефектам', () 
     if (await increase.isEnabled()) {
       await increase.click();
     }
+    const displayedQuantity = await quantity.inputValue();
 
     test.fail(true, 'QA-01: шаг «+» поднимает количество выше остатка');
-    expect(await quantity.inputValue()).toBe(String(stock));
+    expect(displayedQuantity).toBe(String(stock));
   });
 
   test('QA-02 · нулевое количество не добавляет товар', async ({ page }) => {
@@ -50,9 +83,11 @@ test.describe('Регрессии по известным дефектам', () 
       await expect(page.getByRole('status')).toBeVisible();
     }
     await showCart(page);
+    const empty = page.getByTestId('cart-empty');
+    await expect(empty.or(page.getByTestId('cart-row').first())).toBeVisible();
 
     test.fail(true, 'QA-02: запрос с количеством 0 добавляет одну единицу');
-    await expect(page.getByTestId('cart-empty')).toBeVisible({ timeout: 1_000 });
+    await expect(empty).toBeVisible({ timeout: 1_000 });
   });
 
   test('QA-03 · при самовывозе адрес доставки скрыт', async ({ page }) => {
@@ -76,46 +111,23 @@ test.describe('Регрессии по известным дефектам', () 
     const firstQuery = 'Эфиопия';
     const latestQuery = 'матча';
     const matcha = products.matcha.name;
-    const firstRequest = gate();
-    const allowFirst = gate();
-    const firstSettled = gate();
-    const matchesFirst = (url: URL) => url.pathname === '/api/products'
-      && url.searchParams.get('search') === firstQuery;
-    const markFirstSettled = (request: Request) => {
-      if (matchesFirst(new URL(request.url()))) firstSettled.release();
-    };
-
-    await page.route(matchesFirst, async route => {
-      firstRequest.release();
-      await allowFirst.wait;
-      try {
-        await route.continue();
-      } catch (error) {
-        // Cancellation of a superseded request is also valid behavior.
-        if (!route.request().failure()) throw error;
-      }
-    });
-
-    page.on('requestfinished', markFirstSettled);
-    page.on('requestfailed', markFirstSettled);
+    const firstRequest = await delayRequest(page, url => url.pathname === '/api/products'
+      && url.searchParams.get('search') === firstQuery);
     const search = page.getByRole('searchbox', { name: 'Поиск' });
     const cards = page.getByTestId('product-card');
 
     try {
       await search.fill(firstQuery);
-      await firstRequest.wait;
+      await firstRequest.intercepted;
       await search.fill(latestQuery);
       await expect(cards).toHaveCount(1);
       await expect(cards.getByRole('link', { name: matcha, exact: true })).toBeVisible();
     } finally {
-      allowFirst.release();
+      firstRequest.release();
     }
 
-    await firstSettled.wait;
-    // Let the browser paint any update queued by the settled request.
-    await page.evaluate(() => new Promise<void>(resolve => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    }));
+    await firstRequest.settled;
+    await waitForPaint(page);
     await expect(search).toHaveValue(latestQuery);
 
     test.fail(true, 'QA-04: поздний ответ предыдущего поиска заменяет актуальную выдачу');
@@ -132,5 +144,42 @@ test.describe('Регрессии по известным дефектам', () 
 
     test.fail(true, 'QA-05: гостю видна кнопка выхода из аккаунта');
     await expect(logout).toBeHidden({ timeout: 1_000 });
+  });
+
+  test('QA-06 · медленный расчёт самовывоза не меняет итог для курьера', async ({ page }) => {
+    await openCatalog(page);
+    await addFromCatalog(page, products.ethiopia.name, 1);
+    await showCart(page);
+    await openCheckout(page);
+
+    const courier = page.getByRole('radio', { name: 'Курьером' });
+    const shipping = page.getByTestId('shipping');
+    await expect(courier).toBeChecked();
+    await expect(shipping).toHaveText(rubles(300));
+    const pickupRequest = await delayRequest(page, url => url.pathname === '/api/delivery'
+      && url.searchParams.get('method') === 'pickup');
+
+    try {
+      await page.getByRole('radio', { name: 'Самовывоз' }).check();
+      await pickupRequest.intercepted;
+      const courierResponse = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/delivery' && url.searchParams.get('method') === 'courier';
+      });
+      await courier.check();
+      const response = await courierResponse;
+      expect(response.ok()).toBe(true);
+      expect(await response.json()).toMatchObject({ method: 'courier', cost: 300 });
+    } finally {
+      pickupRequest.release();
+    }
+
+    await pickupRequest.settled;
+    await waitForPaint(page);
+    await expect(courier).toBeChecked();
+
+    test.fail(true, 'QA-06: поздний расчёт самовывоза занижает сумму для курьера');
+    await expect.soft(shipping).toHaveText(rubles(300), { timeout: 1_000 });
+    await expect.soft(page.getByTestId('total')).toHaveText(rubles(1190), { timeout: 1_000 });
   });
 });

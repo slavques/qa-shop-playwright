@@ -1,10 +1,17 @@
-import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './support/isolated-shop';
 import {
-  addFromCatalog, applyPromo, expectSignedIn, fillCredentials, newCustomer, openCatalog,
-  openCheckout, openProduct, openRegistration, products, rubles, showCart, submitRegistration,
+  addFromCatalog, applyPromo, cartRow, expectSignedIn, fillCredentials, newCustomer,
+  openCatalog, openCheckout, openProduct, openRegistration, products, rubles, showCart,
+  submitRegistration,
 } from './support/shop';
 
 const guest = { name: 'Тестовый Покупатель', phone: '+7 900 000-00-00', address: 'Тестовая улица, дом 10' };
+
+async function fillGuestContact(page: Page) {
+  await page.getByLabel(/^Имя получателя/).fill(guest.name);
+  await page.getByLabel(/^Телефон/).fill(guest.phone);
+}
 
 test('ORD-01 Гость исправляет поля и оформляет заказ курьером; корзина и остаток обновляются', async ({ page }) => {
   const item = products.frenchPress;
@@ -33,6 +40,14 @@ test('ORD-01 Гость исправляет поля и оформляет за
   await expect(submit).toBeEnabled();
 
   await page.getByLabel(/^Имя получателя/).fill(guest.name);
+  await page.getByLabel(/^Телефон/).fill('123456789');
+  await page.getByLabel(/^Адрес доставки/).fill('Дом');
+  await submit.click();
+  await expect(page.getByText('Укажите имя получателя', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Укажите телефон в формате +7 900 000-00-00', { exact: true })).toBeVisible();
+  await expect(page.getByText('Укажите адрес доставки', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('cart-count')).toHaveText('1');
+
   await page.getByLabel(/^Телефон/).fill(guest.phone);
   await page.getByLabel(/^Адрес доставки/).fill(guest.address);
   await submit.click();
@@ -68,7 +83,7 @@ test('ORD-02 Бесплатная доставка срабатывает ров
   await expect(page.getByTestId('total')).toHaveText(rubles(3000));
 });
 
-test('ORD-03 Промокод снижает сумму ниже порога бесплатной доставки', async ({ page }) => {
+test('ORD-03 Скидка и платная доставка сохраняются в оформленном заказе', async ({ page }) => {
   await openCatalog(page);
   await addFromCatalog(page, products.giftSet.name, 1);
   await showCart(page);
@@ -80,6 +95,21 @@ test('ORD-03 Промокод снижает сумму ниже порога б
   await applyPromo(page, 'WELCOME500');
   await expect(page.getByTestId('total')).toHaveText(rubles(2990));
   await openCheckout(page);
+  await expect(page.getByTestId('discount')).toHaveText(`−${rubles(500)}`);
+  await expect(page.getByTestId('shipping')).toHaveText(rubles(300));
+  await expect(page.getByTestId('total')).toHaveText(rubles(3290));
+
+  await fillGuestContact(page);
+  await page.getByLabel('Адрес доставки').fill(guest.address);
+  await page.getByRole('button', { name: 'Подтвердить заказ' }).click();
+  await expect(page.getByTestId('order-success')).toBeVisible();
+  await expect(page.getByTestId('cart-count')).toHaveText('0');
+
+  await page.reload();
+  await expect(page.getByTestId('order-success')).toBeVisible();
+  await expect(page.getByRole('cell', { name: products.giftSet.name, exact: true })).toBeVisible();
+  await expect(page.getByTestId('subtotal')).toHaveText(rubles(3490));
+  await expect(page.getByText('Скидка (WELCOME500)', { exact: true })).toBeVisible();
   await expect(page.getByTestId('discount')).toHaveText(`−${rubles(500)}`);
   await expect(page.getByTestId('shipping')).toHaveText(rubles(300));
   await expect(page.getByTestId('total')).toHaveText(rubles(3290));
@@ -126,4 +156,63 @@ test('ORD-04 Самовывоз с оплатой наличными сохра�
   } finally {
     await newContext.close();
   }
+});
+
+test('ORD-05 Изменение остатка блокирует заказ до исправления корзины', async ({ page, browser, baseURL }) => {
+  const item = { name: 'Кофемолка ручная', price: 4200, stock: 5 };
+  const remaining = item.stock - 1;
+
+  await openCatalog(page);
+  await openProduct(page, item.name);
+  await expect(page.getByText(`В наличии: ${item.stock} шт.`)).toBeVisible();
+  await page.getByRole('spinbutton', { name: 'Количество' }).fill(String(item.stock));
+  await page.getByRole('button', { name: 'Добавить в корзину' }).click();
+  await expect(page.getByTestId('cart-count')).toHaveText(String(item.stock));
+  await showCart(page);
+  await openCheckout(page);
+  await fillGuestContact(page);
+  await page.getByRole('radio', { name: 'Самовывоз' }).check();
+
+  const otherContext = await browser.newContext({ baseURL });
+  try {
+    await test.step('Покупатель из другой сессии забирает одну кофемолку', async () => {
+      const otherPage = await otherContext.newPage();
+      await openCatalog(otherPage);
+      await addFromCatalog(otherPage, item.name, 1);
+      await showCart(otherPage);
+      await openCheckout(otherPage);
+      await fillGuestContact(otherPage);
+      await otherPage.getByRole('radio', { name: 'Самовывоз' }).check();
+      await otherPage.getByRole('button', { name: 'Подтвердить заказ' }).click();
+      await expect(otherPage.getByTestId('order-success')).toBeVisible();
+    });
+
+    const submit = page.getByRole('button', { name: 'Подтвердить заказ' });
+    await submit.click();
+    await expect(page.getByRole('alert')).toHaveText(`Товара «${item.name}» осталось ${remaining} шт.`);
+    await expect(page).toHaveURL(/#\/checkout$/);
+    await expect(page.getByTestId('cart-count')).toHaveText(String(item.stock));
+    await expect(submit).toBeEnabled();
+  } finally {
+    await otherContext.close();
+  }
+
+  await showCart(page);
+  const row = cartRow(page, item.name);
+  await expect(row.getByRole('spinbutton', { name: 'Количество' })).toHaveValue(String(item.stock));
+  await row.getByRole('button', { name: 'Уменьшить количество' }).click();
+  await expect(page.getByTestId('cart-count')).toHaveText(String(remaining));
+  await expect(page.getByTestId('total')).toHaveText(rubles(item.price * remaining));
+  await openCheckout(page);
+  await fillGuestContact(page);
+  await page.getByRole('radio', { name: 'Самовывоз' }).check();
+  await page.getByRole('button', { name: 'Подтвердить заказ' }).click();
+  await expect(page.getByTestId('order-success')).toBeVisible();
+  await expect(page.getByTestId('cart-count')).toHaveText('0');
+  await expect(page.getByTestId('total')).toHaveText(rubles(item.price * remaining));
+
+  await openCatalog(page);
+  await openProduct(page, item.name);
+  await expect(page.getByText('Нет в наличии')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Добавить в корзину' })).toBeDisabled();
 });

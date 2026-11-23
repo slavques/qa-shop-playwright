@@ -69,3 +69,27 @@ test('PROMO-04 Скидка перестаёт действовать при с�
   await expect(page.getByTestId('discount')).toHaveCount(0);
   await expect(page.getByTestId('total')).toHaveText(rubles(890));
 });
+
+test('PROMO-05 Второй промокод заменяет первый, очистка корзины сбрасывает скидку', async ({ page }) => {
+  const { giftCard } = products;
+  await openCatalog(page);
+  await addFromCatalog(page, giftCard.name, 1);
+  await showCart(page);
+
+  await applyPromo(page, 'SALE10');
+  await expect(page.getByTestId('total')).toHaveText(rubles(1800));
+
+  await applyPromo(page, 'WELCOME500');
+  await expect(page.getByText('Скидка (WELCOME500)', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('discount')).toHaveText(`−${rubles(500)}`);
+  await expect(page.getByTestId('total')).toHaveText(rubles(1500));
+
+  await page.getByRole('button', { name: 'Очистить корзину' }).click();
+  await expect(page.getByTestId('cart-empty')).toBeVisible();
+  await page.getByRole('link', { name: 'Перейти в каталог' }).click();
+  await addFromCatalog(page, giftCard.name, 1);
+  await showCart(page);
+  await expect(page.getByRole('textbox', { name: 'Промокод' })).toHaveValue('');
+  await expect(page.getByTestId('discount')).toHaveCount(0);
+  await expect(page.getByTestId('total')).toHaveText(rubles(2000));
+});
