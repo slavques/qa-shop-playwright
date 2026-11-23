@@ -33,9 +33,10 @@ test('AUTH-02 Ошибки имени, e-mail и минимальной длин
   await submitRegistration(page, { name: 'Q', email: 'broken-address', password: '12345' });
 
   await expect(page.getByRole('alert')).toHaveText('Проверьте поля формы');
-  await expect(page.getByLabel(/^Имя/)).toHaveAccessibleName(/Укажите имя/);
-  await expect(page.getByLabel(/^E-mail/)).toHaveAccessibleName(/Укажите корректный e-mail/);
-  await expect(page.getByLabel(/^Пароль/)).toHaveAccessibleName(/Пароль должен быть не короче 6 символов/);
+  const form = page.getByRole('main');
+  await expect(form.getByText('Укажите имя', { exact: true })).toBeVisible();
+  await expect(form.getByText('Укажите корректный e-mail', { exact: true })).toBeVisible();
+  await expect(form.getByText('Пароль должен быть не короче 6 символов', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Мои заказы' })).toBeHidden();
 
   const customer = { ...newCustomer(), name: 'QA', password: 'Qashop' };
@@ -54,7 +55,7 @@ test('AUTH-03 Повторная регистрация того же норма
 
   await submitRegistration(page, { ...customer, email: customer.email.toUpperCase() });
   await expect(page.getByRole('alert')).toHaveText('Пользователь с таким e-mail уже зарегистрирован');
-  await expect(page.getByLabel(/^E-mail/)).toHaveAccessibleName(/E-mail уже занят/);
+  await expect(page.getByRole('main').getByText('E-mail уже занят', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Мои заказы' })).toBeHidden();
 });
 

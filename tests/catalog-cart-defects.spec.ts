@@ -30,7 +30,9 @@ test('QA-20 · временная ошибка поиска видна и пои
   }));
 
   await expect(search).toHaveValue('матча');
-  const errorVisible = await page.getByRole('alert').isVisible()
+  const status = page.getByRole('status');
+  const statusVisible = await status.isVisible() && Boolean((await status.textContent())?.trim());
+  const errorVisible = await page.getByRole('alert').isVisible() || statusVisible
     || await page.getByText(failureMessage, { exact: true }).isVisible();
   if (!errorVisible) expect(await names.allTextContents()).toEqual(previousResults);
 

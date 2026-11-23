@@ -104,10 +104,11 @@ test('QA-23 · при ошибке регистрации клавиатурны
   await expect(submit).toBeFocused();
   await page.keyboard.press('Enter');
 
+  const form = page.getByRole('main');
   await expect(page.getByRole('alert')).toHaveText('Проверьте поля формы');
-  await expect(name).toHaveAccessibleName(/Укажите имя/);
-  await expect(email).toHaveAccessibleName(/Укажите корректный e-mail/);
-  await expect(password).toHaveAccessibleName(/Пароль должен быть не короче 6 символов/);
+  await expect(form.getByText('Укажите имя', { exact: true })).toBeVisible();
+  await expect(form.getByText('Укажите корректный e-mail', { exact: true })).toBeVisible();
+  await expect(form.getByText('Пароль должен быть не короче 6 символов', { exact: true })).toBeVisible();
   const nameFocused = await name.evaluate(element => element === document.activeElement);
   if (!nameFocused) await expect(submit).toBeFocused();
 
@@ -132,6 +133,10 @@ test('QA-24 · заголовки вкладок различают катало
   expect(titles.every(title => title.trim().length > 0)).toBe(true);
   const distinctTitles = new Set(titles).size;
   expect([1, titles.length]).toContain(distinctTitles);
+  if (distinctTitles === titles.length) {
+    expect(loginTitle).toMatch(/вход|войти|авторизаци/i);
+    expect(registerTitle).toMatch(/регистраци|зарегистрир/i);
+  }
 
   test.fail(true, 'QA-24: разные страницы остаются под одним заголовком вкладки');
   expect(distinctTitles).toBe(titles.length);

@@ -78,3 +78,50 @@ test('QA-19 · после отправки пустого заказа сооб�
   test.fail(true, 'QA-19: сводка и первая ошибка остаются выше видимой области');
   expect(layout.feedbackVisible).toBe(true);
 });
+
+function relativeLuminance([red, green, blue]: number[]): number {
+  const linear = [red, green, blue].map(value => {
+    const channel = value / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastAgainst(color: string, background: string): number {
+  const [red, green, blue, alpha = 1] = color.match(/[\d.]+/g)!.map(Number);
+  const backdrop = background.match(/[\d.]+/g)!.map(Number);
+  const composite = [red, green, blue].map((channel, index) =>
+    channel * alpha + backdrop[index] * (1 - alpha));
+  const surface = relativeLuminance(composite);
+  const surrounding = relativeLuminance(backdrop);
+  return (Math.max(surface, surrounding) + 0.05) / (Math.min(surface, surrounding) + 0.05);
+}
+
+test('QA-26 · пустое поле различимо до фокуса с контрастом не ниже 3:1', async ({ page }) => {
+  await openCatalog(page);
+  await openRegistration(page);
+  const name = page.getByRole('textbox', { name: 'Имя', exact: true });
+  await expect(name).toBeVisible();
+  await expect(name).toBeEnabled();
+  await expect(name).toHaveValue('');
+  await expect(name).not.toBeFocused();
+
+  const colors = await name.evaluate(element => {
+    const field = getComputedStyle(element);
+    const form = getComputedStyle(element.closest('form')!);
+    return {
+      boundary: field.borderTopStyle === 'none' || field.borderTopWidth === '0px'
+        ? field.backgroundColor
+        : field.borderTopColor,
+      fill: field.backgroundColor,
+      surrounding: form.backgroundColor,
+    };
+  });
+  const contrast = Math.max(
+    contrastAgainst(colors.boundary, colors.surrounding),
+    contrastAgainst(colors.fill, colors.surrounding),
+  );
+
+  test.fail(true, 'QA-26: у пустого поля белая заливка и малоконтрастная рамка на белом фоне');
+  expect(contrast).toBeGreaterThanOrEqual(3);
+});
