@@ -113,6 +113,14 @@ test('ORD-03 Скидка и платная доставка сохраняют�
   await expect(page.getByTestId('discount')).toHaveText(`−${rubles(500)}`);
   await expect(page.getByTestId('shipping')).toHaveText(rubles(300));
   await expect(page.getByTestId('total')).toHaveText(rubles(3290));
+
+  const orderId = page.getByTestId('order-id');
+  await expect(orderId).toHaveText(/^\d+$/);
+  const savedOrder = await page.request.get(`/api/orders/${await orderId.innerText()}`);
+  expect(savedOrder.status()).toBe(200);
+  expect(await savedOrder.json()).toMatchObject({
+    promo: 'WELCOME500', subtotal: 3490, discount: 500, shipping: 300, total: 3290,
+  });
 });
 
 test('ORD-04 Самовывоз с оплатой наличными сохраняется в истории аккаунта', async ({ page, browser, baseURL }) => {
