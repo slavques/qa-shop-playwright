@@ -93,3 +93,25 @@ test('PROMO-05 Второй промокод заменяет первый, оч
   await expect(page.getByTestId('discount')).toHaveCount(0);
   await expect(page.getByTestId('total')).toHaveText(rubles(2000));
 });
+
+test('QA-17 · изменение количества сохраняет ещё не применённый промокод', async ({ page }) => {
+  const product = products.ethiopia;
+  await openCatalog(page);
+  await addFromCatalog(page, product.name, 1);
+  await addFromCatalog(page, product.name, 2);
+  await showCart(page);
+  await expect(page.getByTestId('subtotal')).toHaveText(rubles(1780));
+
+  const promo = page.getByRole('textbox', { name: 'Промокод' });
+  await promo.fill('WELCOME500');
+  await expect(promo).toHaveValue('WELCOME500');
+  await cartRow(page, product.name).getByRole('button', { name: 'Увеличить количество' }).click();
+  await expect(page.getByTestId('subtotal')).toHaveText(rubles(2670));
+  await expect(page.getByTestId('cart-count')).toHaveText('3');
+  await expect(page.getByTestId('discount')).toHaveCount(0);
+  const draft = await promo.inputValue();
+  expect(['', 'WELCOME500']).toContain(draft);
+
+  test.fail(true, 'QA-17: пересчёт количества очищает черновик промокода');
+  expect(draft).toBe('WELCOME500');
+});

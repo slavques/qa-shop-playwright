@@ -42,7 +42,9 @@ jobs:
         run: npm run typecheck
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
-      - name: Chromium regression and cross-browser smoke
+      - name: Full Chromium, Firefox and WebKit regression
+        env:
+          PLAYWRIGHT_FULL_MATRIX: '1'
         run: npx playwright test
       - name: Upload Playwright results
         if: ${{ !cancelled() }}

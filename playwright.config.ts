@@ -5,6 +5,13 @@ const port = process.env.SHOP_PORT ?? '3100';
 const baseURL = targetUrl || `http://127.0.0.1:${port}`;
 const healthUrl = new URL('/api/health', baseURL).href;
 const smokeSpec = '**/*.smoke.spec.ts';
+const regressionBrowsers = [
+  { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+  ...(process.env.PLAYWRIGHT_FULL_MATRIX === '1' ? [
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+  ] : []),
+];
 
 export default defineConfig({
   testDir: './tests',
@@ -29,11 +36,7 @@ export default defineConfig({
   },
   projects: [
     // Stock and account tests run only against the server started for this run.
-    ...(!targetUrl ? [{
-      name: 'chromium',
-      testIgnore: smokeSpec,
-      use: { ...devices['Desktop Chrome'] },
-    }] : []),
+    ...(!targetUrl ? regressionBrowsers.map(browser => ({ ...browser, testIgnore: smokeSpec })) : []),
     {
       name: 'smoke-chromium',
       testMatch: smokeSpec,

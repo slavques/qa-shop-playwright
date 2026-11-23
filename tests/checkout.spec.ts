@@ -224,3 +224,28 @@ test('ORD-05 Изменение остатка блокирует заказ д�
   await expect(page.getByText('Нет в наличии')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Добавить в корзину' })).toBeDisabled();
 });
+
+test('ORD-06 Комментарий сохраняется целиком при лимите в 500 символов', async ({ page }) => {
+  await openCatalog(page);
+  await addFromCatalog(page, products.ethiopia.name, 1);
+  await showCart(page);
+  await openCheckout(page);
+  await fillGuestContact(page);
+  await page.getByLabel('Адрес доставки').fill(guest.address);
+
+  const comment = page.getByRole('textbox', { name: 'Комментарий к заказу' });
+  const belowLimit = 'Пожалуйста, позвоните перед доставкой. '.repeat(20).slice(0, 499);
+  const atLimit = `${belowLimit}А`;
+  await comment.fill(belowLimit);
+  await page.keyboard.insertText('А');
+  await expect(comment).toHaveValue(atLimit);
+  await page.keyboard.insertText('Б');
+  await expect(comment).toHaveValue(atLimit);
+
+  await page.getByRole('button', { name: 'Подтвердить заказ' }).click();
+  const id = page.getByTestId('order-id');
+  await expect(id).toHaveText(/^\d+$/);
+  const order = await page.request.get(`/api/orders/${await id.innerText()}`);
+  await expect(order).toBeOK();
+  expect(await order.json()).toMatchObject({ customer: { comment: atLimit } });
+});
