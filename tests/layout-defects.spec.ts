@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
-  addFromCatalog, newCustomer, openCatalog, openRegistration, products, rubles, showCart, submitRegistration,
+  addFromCatalog, newCustomer, openCatalog, openCheckout, openRegistration, products, rubles, showCart, submitRegistration,
 } from './support/shop';
 
 test('QA-15 · мобильная шапка удерживает ссылку корзины в пределах экрана', async ({ page }) => {
@@ -47,4 +47,34 @@ test('QA-18 · изменение количества с клавиатуры �
 
   test.fail(true, 'QA-18: после успешного пересчёта корзины фокус сбрасывается на документ');
   expect(focus.inCart).toBe(true);
+});
+
+test('QA-19 · после отправки пустого заказа сообщение об ошибке видно на телефоне', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 664 });
+  await openCatalog(page);
+  await addFromCatalog(page, products.ethiopia.name, 1);
+  await showCart(page);
+  await openCheckout(page);
+
+  const confirm = page.getByRole('button', { name: 'Подтвердить заказ' });
+  await confirm.scrollIntoViewIfNeeded();
+  await confirm.click();
+  const summary = page.getByRole('alert');
+  await expect(summary).toHaveText('Проверьте поля формы');
+  await expect(page.getByText('Укажите имя получателя', { exact: true })).toBeVisible();
+  await expect(confirm).toBeEnabled();
+
+  const layout = await summary.evaluate(element => {
+    const headerBottom = document.querySelector('header')!.getBoundingClientRect().bottom;
+    const rect = element.getBoundingClientRect();
+    const firstError = document.querySelector('.field-error')!.getBoundingClientRect();
+    const feedbackVisible = [rect, firstError].some(box => box.top >= headerBottom && box.bottom <= window.innerHeight);
+    return { feedbackVisible, firstErrorBottom: firstError.bottom, summaryBottom: rect.bottom, headerBottom };
+  });
+  if (!layout.feedbackVisible) {
+    expect(Math.max(layout.firstErrorBottom, layout.summaryBottom)).toBeLessThan(layout.headerBottom);
+  }
+
+  test.fail(true, 'QA-19: сводка и первая ошибка остаются выше видимой области');
+  expect(layout.feedbackVisible).toBe(true);
 });

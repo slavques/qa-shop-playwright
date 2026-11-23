@@ -5,6 +5,7 @@ const port = process.env.SHOP_PORT ?? '3100';
 const baseURL = targetUrl || `http://127.0.0.1:${port}`;
 const healthUrl = new URL('/api/health', baseURL).href;
 const smokeSpec = '**/*.smoke.spec.ts';
+const uatSpec = '**/*.uat.spec.ts';
 const regressionBrowsers = [
   { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ...(process.env.PLAYWRIGHT_FULL_MATRIX === '1' ? [
@@ -37,6 +38,10 @@ export default defineConfig({
   projects: [
     // Stock and account tests run only against the server started for this run.
     ...(!targetUrl ? regressionBrowsers.map(browser => ({ ...browser, testIgnore: smokeSpec })) : []),
+    ...(!targetUrl && process.env.PLAYWRIGHT_FULL_MATRIX === '1' ? [
+      { name: 'mobile-chromium', testMatch: uatSpec, use: { ...devices['Pixel 7'] } },
+      { name: 'mobile-webkit', testMatch: uatSpec, use: { ...devices['iPhone 13'] } },
+    ] : []),
     {
       name: 'smoke-chromium',
       testMatch: smokeSpec,

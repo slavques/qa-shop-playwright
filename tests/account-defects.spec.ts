@@ -86,3 +86,53 @@ test('QA-12 · кнопка браузера «Назад» после выхо�
   test.fail(true, 'QA-12: каждый шаг назад снова добавляет страницу входа');
   expect(escapedLogin).toBe(true);
 });
+
+test('QA-23 · при ошибке регистрации клавиатурный фокус переходит на первое неверное поле', async ({ page }) => {
+  await openCatalog(page);
+  await openRegistration(page);
+  const name = page.getByLabel(/^Имя/);
+  const email = page.getByLabel(/^E-mail/);
+  const password = page.getByLabel(/^Пароль/);
+  const submit = page.getByRole('button', { name: 'Зарегистрироваться', exact: true });
+
+  await name.focus();
+  await page.keyboard.press('Tab');
+  await expect(email).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(password).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(submit).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  await expect(page.getByRole('alert')).toHaveText('Проверьте поля формы');
+  await expect(name).toHaveAccessibleName(/Укажите имя/);
+  await expect(email).toHaveAccessibleName(/Укажите корректный e-mail/);
+  await expect(password).toHaveAccessibleName(/Пароль должен быть не короче 6 символов/);
+  const nameFocused = await name.evaluate(element => element === document.activeElement);
+  if (!nameFocused) await expect(submit).toBeFocused();
+
+  test.fail(true, 'QA-23: после ошибок фокус остаётся на кнопке отправки');
+  expect(nameFocused).toBe(true);
+});
+
+test('QA-24 · заголовки вкладок различают каталог, вход и регистрацию', async ({ page }) => {
+  await openCatalog(page);
+  const catalogTitle = await page.title();
+
+  await page.getByRole('banner').getByRole('link', { name: 'Войти', exact: true }).click();
+  await expect(page).toHaveURL(/#\/login$/);
+  await expect(page.getByRole('heading', { name: 'Вход', exact: true })).toBeVisible();
+  const loginTitle = await page.title();
+
+  await page.getByRole('link', { name: 'Зарегистрироваться', exact: true }).click();
+  await expect(page).toHaveURL(/#\/register$/);
+  await expect(page.getByRole('heading', { name: 'Регистрация', exact: true })).toBeVisible();
+  const registerTitle = await page.title();
+  const titles = [catalogTitle, loginTitle, registerTitle];
+  expect(titles.every(title => title.trim().length > 0)).toBe(true);
+  const distinctTitles = new Set(titles).size;
+  expect([1, titles.length]).toContain(distinctTitles);
+
+  test.fail(true, 'QA-24: разные страницы остаются под одним заголовком вкладки');
+  expect(distinctTitles).toBe(titles.length);
+});

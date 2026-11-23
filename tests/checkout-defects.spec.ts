@@ -88,3 +88,45 @@ test('QA-08 · телефон с одной цифрой и разделител
   test.fail(true, 'QA-08: сервер оформляет заказ с недействительным номером из одной цифры');
   expect(confirmed).toBe(false);
 });
+
+test('QA-22 · после сбоя расчёта доставки нельзя подтвердить старую стоимость молча', async ({ page }) => {
+  await prepareCourierCheckout(page, '+7 900 000-00-00');
+  await expect(page.getByRole('status')).toBeHidden();
+
+  const pickupQuote = (url: URL) => url.pathname === '/api/delivery'
+    && url.searchParams.get('method') === 'pickup';
+  await page.route(pickupQuote, route => route.abort('failed'), { times: 1 });
+  const failure = page.waitForEvent('requestfailed', request => pickupQuote(new URL(request.url())));
+  const pickup = page.getByRole('radio', { name: 'Самовывоз' });
+  await pickup.check();
+  expect((await failure).failure()).not.toBeNull();
+
+  // Allow the browser to commit the UI update caused by the rejected fetch.
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  await expect(pickup).toBeChecked();
+  const shipping = page.getByTestId('shipping');
+  const total = page.getByTestId('total');
+  const submit = page.getByRole('button', { name: 'Подтвердить заказ' });
+  const quote = {
+    shipping: await shipping.isVisible() ? normalizeSpacing(await shipping.innerText()) : null,
+    total: await total.isVisible() ? normalizeSpacing(await total.innerText()) : null,
+    submitEnabled: await submit.isVisible() && await submit.isEnabled(),
+    feedbackVisible: await page.getByRole('alert').isVisible() || await page.getByRole('status').isVisible(),
+  };
+  const silentStaleQuote = quote.shipping === normalizeSpacing(rubles(300))
+    && quote.total === normalizeSpacing(rubles(originalTotal))
+    && quote.submitEnabled
+    && !quote.feedbackVisible;
+
+  if (silentStaleQuote) {
+    await page.getByRole('radio', { name: 'Курьером' }).check();
+    await pickup.check();
+    await expect(shipping).toHaveText('бесплатно');
+    await expect(total).toHaveText(rubles(coffee.price));
+  }
+
+  test.fail(true, 'QA-22: при выбранном самовывозе остаётся 300 ₽ доставки без сообщения о сбое');
+  expect(silentStaleQuote).toBe(false);
+});
