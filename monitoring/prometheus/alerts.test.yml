@@ -1,0 +1,87 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: Scrape failure must last one minute
+    interval: 15s
+    input_series:
+      - series: 'up{job="qa-shop",instance="shop:3000"}'
+        values: '1 0 0 0 0 0 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ShopScrapeDown
+        exp_alerts: []
+      - eval_time: 1m15s
+        alertname: ShopScrapeDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: qa-shop
+              instance: shop:3000
+            exp_annotations:
+              summary: Prometheus не получает метрики QA Shop
+              description: Проверьте доступность /metrics из сети Prometheus и журнал приложения.
+      - eval_time: 1m30s
+        alertname: ShopScrapeDown
+        exp_alerts: []
+
+  - name: Missing shop target is treated as a scrape failure
+    interval: 15s
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ShopScrapeDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: qa-shop
+            exp_annotations:
+              summary: Prometheus не получает метрики QA Shop
+              description: Проверьте доступность /metrics из сети Prometheus и журнал приложения.
+
+  - name: Sustained API 5xx above threshold at sufficient request volume
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="qa-shop",route="/api/products",status="200"}'
+        values: '0+9x28'
+      - series: 'http_requests_total{job="qa-shop",route="/api/products",status="500"}'
+        values: '0+1x28'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ShopHighServerErrorRate
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: ShopHighServerErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Доля ответов HTTP 5xx API превышает 5 %
+              description: Порог учитывает окна с 20 и более запросами за 5 минут. Сверьте ответ API и журнал приложения.
+
+  - name: Single failure under the request volume threshold stays inactive
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="qa-shop",route="/api/products",status="200"}'
+        values: '0 1+0x28'
+      - series: 'http_requests_total{job="qa-shop",route="/api/products",status="500"}'
+        values: '0 1+0x28'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ShopHighServerErrorRate
+        exp_alerts: []
+
+  - name: Health check and scrape errors are excluded from API error rate
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="qa-shop",route="/api/products",status="200"}'
+        values: '0+9x28'
+      - series: 'http_requests_total{job="qa-shop",route="/api/health",status="500"}'
+        values: '0+10x28'
+      - series: 'http_requests_total{job="qa-shop",route="/metrics",status="500"}'
+        values: '0+10x28'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: ShopHighServerErrorRate
+        exp_alerts: []

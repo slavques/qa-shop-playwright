@@ -1,0 +1,25 @@
+groups:
+  - name: qa-shop
+    rules:
+      - alert: ShopScrapeDown
+        expr: up{job="qa-shop"} == 0 or absent(up{job="qa-shop"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus не получает метрики QA Shop
+          description: Проверьте доступность /metrics из сети Prometheus и журнал приложения.
+
+      - alert: ShopHighServerErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="qa-shop",route=~"/api/.*",route!="/api/health",status=~"5.."}[5m]))
+            / sum(rate(http_requests_total{job="qa-shop",route=~"/api/.*",route!="/api/health"}[5m]))
+          ) > 0.05
+          and sum(increase(http_requests_total{job="qa-shop",route=~"/api/.*",route!="/api/health"}[5m])) >= 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Доля ответов HTTP 5xx API превышает 5 %
+          description: Порог учитывает окна с 20 и более запросами за 5 минут. Сверьте ответ API и журнал приложения.

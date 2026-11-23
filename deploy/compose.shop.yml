@@ -1,0 +1,31 @@
+services:
+  shop:
+    build:
+      context: ${SHOP_DIR:-../../qa-shop}
+      dockerfile_inline: |
+        FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+        WORKDIR /app
+        COPY package.json package-lock.json ./
+        RUN npm ci --omit=dev && mkdir -p /data && chown node:node /data
+        COPY server.js products.json ./
+        COPY public/ ./public/
+        USER node
+        CMD ["node", "server.js"]
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATA_DIR: /data
+    ports:
+      - '127.0.0.1:${SHOP_HTTP_PORT:-3000}:3000'
+    volumes:
+      - shop-data:/data
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  shop-data:

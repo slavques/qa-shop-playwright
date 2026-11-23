@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: qa-shop
+    type: file
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: $GRAFANA_DASHBOARDS_PATH

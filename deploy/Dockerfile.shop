@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS build
+ADD --checksum=sha256:3cf0318eb5eef0da9bee1aaa9e20a3f9df9d3a371a4457af1deefbd9a95a7b5c https://qa-test.g-profile.ru/download/qa-shop.zip /tmp/qa-shop.zip
+RUN unzip -q /tmp/qa-shop.zip -d /tmp
+WORKDIR /tmp/qa-shop
+RUN npm ci --omit=dev
+
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+WORKDIR /app
+COPY --from=build /tmp/qa-shop/package.json /tmp/qa-shop/server.js /tmp/qa-shop/products.json ./
+COPY --from=build /tmp/qa-shop/node_modules/ ./node_modules/
+COPY --from=build /tmp/qa-shop/public/ ./public/
+RUN mkdir -p /data && chown node:node /data
+ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

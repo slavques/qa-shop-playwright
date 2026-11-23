@@ -1,0 +1,21 @@
+{
+  "name": "lavka-qa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright E2E tests for the Lavka QA shop",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "playwright test --project=chromium --project=smoke-chromium",
+    "test:smoke": "playwright test --project=smoke-chromium",
+    "test:cross-browser": "playwright test --project=smoke-firefox --project=smoke-webkit",
+    "typecheck": "tsc --noEmit",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}
