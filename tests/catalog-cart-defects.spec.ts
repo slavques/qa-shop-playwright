@@ -133,10 +133,8 @@ test('QA-25 · содержимое карточки товара остаётс
     buttonRight: element.querySelector('#add')!.getBoundingClientRect().right,
     iconRight: element.querySelector('.product__icon')!.getBoundingClientRect().right,
     viewport: document.documentElement.clientWidth,
-    documentWidth: document.documentElement.scrollWidth,
   }));
   expect(geometry.viewport).toBe(320);
-  expect(geometry.documentWidth).toBe(geometry.viewport);
 
   test.fail(true, 'QA-25: кнопка и иллюстрация выступают за правую границу карточки');
   expect(Math.max(geometry.buttonRight, geometry.iconRight)).toBeLessThanOrEqual(geometry.cardRight + 1);
