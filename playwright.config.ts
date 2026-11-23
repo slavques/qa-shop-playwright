@@ -8,6 +8,7 @@ const smokeSpec = '**/*.smoke.spec.ts';
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: targetUrl ? './tests/support/wait-for-public-shop.ts' : undefined,
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,

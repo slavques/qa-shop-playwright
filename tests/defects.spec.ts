@@ -9,21 +9,27 @@ import {
   showCart,
 } from './support/shop';
 
-function gate() {
-  let release!: () => void;
-  const wait = new Promise<void>(resolve => { release = resolve; });
+function gate<T = void>() {
+  let release!: (value: T) => void;
+  const wait = new Promise<T>(resolve => { release = resolve; });
   return { wait, release };
 }
 
 async function delayRequest(page: Page, matches: (url: URL) => boolean) {
   const intercepted = gate();
   const release = gate();
-  const settled = gate();
+  const settled = gate<Request>();
+  let heldRequest: Request | undefined;
   const markSettled = (request: Request) => {
-    if (matches(new URL(request.url()))) settled.release();
+    if (request === heldRequest) {
+      page.off('requestfinished', markSettled);
+      page.off('requestfailed', markSettled);
+      settled.release(request);
+    }
   };
 
   await page.route(matches, async route => {
+    heldRequest = route.request();
     intercepted.release();
     await release.wait;
     try {
@@ -32,15 +38,23 @@ async function delayRequest(page: Page, matches: (url: URL) => boolean) {
       // Cancellation of a superseded request is also valid behavior.
       if (!route.request().failure()) throw error;
     }
-  });
+  }, { times: 1 });
   page.on('requestfinished', markSettled);
   page.on('requestfailed', markSettled);
 
   return { intercepted: intercepted.wait, release: release.release, settled: settled.wait };
 }
 
-async function waitForPaint(page: Page) {
-  // Let the browser paint any update queued by the settled request.
+async function waitForRender(page: Page, settled: Promise<Request>) {
+  const request = await settled;
+  const failure = request.failure();
+  if (failure) {
+    expect(failure.errorText, 'A superseded request may be cancelled').toMatch(/abort|cancel/i);
+  } else {
+    expect((await request.response())?.ok(), 'The delayed request must succeed').toBe(true);
+  }
+
+  // Let the browser commit any update queued by the completed fetch.
   await page.evaluate(() => new Promise<void>(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   }));
@@ -65,6 +79,7 @@ test.describe('Регрессии по известным дефектам', () 
       await increase.click();
     }
     const displayedQuantity = await quantity.inputValue();
+    expect([String(stock), String(stock + 1)]).toContain(displayedQuantity);
 
     test.fail(true, 'QA-01: шаг «+» поднимает количество выше остатка');
     expect(displayedQuantity).toBe(String(stock));
@@ -85,9 +100,16 @@ test.describe('Регрессии по известным дефектам', () 
     await showCart(page);
     const empty = page.getByTestId('cart-empty');
     await expect(empty.or(page.getByTestId('cart-row').first())).toBeVisible();
+    const isEmpty = await empty.isVisible();
+    if (!isEmpty) {
+      await expect(page.getByTestId('cart-row')).toHaveCount(1);
+      const kettle = page.getByTestId('cart-row').getByRole('link', { name: products.kettle.name, exact: true });
+      await expect(kettle).toBeVisible();
+      await expect(page.getByTestId('cart-count')).toHaveText('1');
+    }
 
     test.fail(true, 'QA-02: запрос с количеством 0 добавляет одну единицу');
-    await expect(empty).toBeVisible({ timeout: 1_000 });
+    expect(isEmpty).toBe(true);
   });
 
   test('QA-03 · при самовывозе адрес доставки скрыт', async ({ page }) => {
@@ -126,13 +148,14 @@ test.describe('Регрессии по известным дефектам', () 
       firstRequest.release();
     }
 
-    await firstRequest.settled;
-    await waitForPaint(page);
+    await waitForRender(page, firstRequest.settled);
     await expect(search).toHaveValue(latestQuery);
+    const displayedResults = await cards.getByRole('link').allTextContents();
+    const staleResults = [products.ethiopia.name, products.giftSet.name];
+    expect([[matcha], staleResults]).toContainEqual(displayedResults);
 
     test.fail(true, 'QA-04: поздний ответ предыдущего поиска заменяет актуальную выдачу');
-    await expect(cards).toHaveCount(1, { timeout: 1_000 });
-    await expect(cards.getByRole('link', { name: matcha, exact: true })).toBeVisible();
+    expect(displayedResults).toEqual([matcha]);
   });
 
   test('QA-05 · гостю доступен вход, кнопка выхода скрыта', async ({ page }) => {
@@ -174,12 +197,16 @@ test.describe('Регрессии по известным дефектам', () 
       pickupRequest.release();
     }
 
-    await pickupRequest.settled;
-    await waitForPaint(page);
+    await waitForRender(page, pickupRequest.settled);
     await expect(courier).toBeChecked();
+    const normalizeWhitespace = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const displayedSummary = [await shipping.innerText(), await page.getByTestId('total').innerText()]
+      .map(normalizeWhitespace);
+    const courierSummary = [rubles(300), rubles(1190)].map(normalizeWhitespace);
+    const stalePickupSummary = ['бесплатно', rubles(890)].map(normalizeWhitespace);
+    expect([courierSummary, stalePickupSummary]).toContainEqual(displayedSummary);
 
     test.fail(true, 'QA-06: поздний расчёт самовывоза занижает сумму для курьера');
-    await expect.soft(shipping).toHaveText(rubles(300), { timeout: 1_000 });
-    await expect.soft(page.getByTestId('total')).toHaveText(rubles(1190), { timeout: 1_000 });
+    expect(displayedSummary).toEqual(courierSummary);
   });
 });

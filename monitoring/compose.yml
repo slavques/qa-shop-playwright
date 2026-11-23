@@ -3,7 +3,7 @@ services:
     build:
       context: ../monitoring
       dockerfile_inline: |
-        FROM prom/prometheus:v3.16.0
+        FROM prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
         COPY prometheus/prometheus.yml prometheus/alerts.yml prometheus/alerts.test.yml /etc/prometheus/
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -16,9 +16,12 @@ services:
     build:
       context: ../monitoring
       dockerfile_inline: |
-        FROM grafana/grafana:13.3.1
+        FROM grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+        USER root
+        RUN apk upgrade --no-cache libcrypto3 libssl3 zlib
         COPY grafana/provisioning/ /etc/grafana/provisioning/
         COPY grafana/dashboards/ /opt/qa-shop/dashboards/
+        USER 472
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set a unique Grafana admin password}
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:${GRAFANA_PORT:-13000}}

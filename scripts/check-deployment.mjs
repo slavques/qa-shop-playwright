@@ -2,9 +2,24 @@ import assert from 'node:assert/strict';
 import { setTimeout } from 'node:timers/promises';
 
 const shop = 'http://127.0.0.1:13101';
+const grafana = 'http://127.0.0.1:13100';
 const token = process.env.GRAFANA_PUBLIC_DASHBOARD_TOKEN;
 assert.match(token ?? '', /^[a-f0-9]{32}$/, 'CI requires a public dashboard token');
-const dashboard = `http://127.0.0.1:13100/api/public/dashboards/${token}`;
+const dashboard = `${grafana}/api/public/dashboards/${token}`;
+
+async function verifyAnonymousAccess() {
+  const [account, orders, privateDashboard] = await Promise.all([
+    fetch(`${shop}/api/auth/me`, { signal: AbortSignal.timeout(5_000) }),
+    fetch(`${shop}/api/orders`, { signal: AbortSignal.timeout(5_000) }),
+    fetch(`${grafana}/api/dashboards/uid/qa-shop-observability`, { signal: AbortSignal.timeout(5_000) }),
+  ]);
+
+  assert.equal(account.status, 200, 'Shop should identify an anonymous session');
+  assert.deepEqual(await account.json(), { user: null });
+  assert.equal(orders.status, 401, 'Order history requires a signed-in customer');
+  assert.equal(privateDashboard.status, 401, 'Grafana management API requires sign-in');
+  console.log('Anonymous account and protected-resource checks passed');
+}
 
 async function createDemoOrder() {
   const cart = await fetch(`${shop}/api/cart/items`, {
@@ -64,6 +79,7 @@ const dataPanels = panels.filter(({ type }) => type !== 'row');
 const expected = [1, 1, 890];
 const metricPanels = [2, 9, 10]; // Scrape health, order count, order total.
 
+await verifyAnonymousAccess();
 await createDemoOrder();
 
 let actual;

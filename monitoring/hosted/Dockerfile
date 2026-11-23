@@ -1,8 +1,9 @@
-FROM prom/prometheus:v3.16.0 AS prometheus
-FROM grafana/grafana:13.3.1
+FROM prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06 AS prometheus
+FROM grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
 
 USER root
-RUN apk add --no-cache bash curl jq tini
+RUN apk upgrade --no-cache libcrypto3 libssl3 zlib \
+    && apk add --no-cache bash curl jq tini
 
 COPY --from=prometheus /bin/prometheus /usr/local/bin/prometheus
 COPY --from=prometheus /bin/promtool /usr/local/bin/promtool
