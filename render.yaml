@@ -1,0 +1,44 @@
+services:
+  - name: lavka-qa-slavques
+    type: web
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerContext: ./deploy
+    dockerfilePath: ./deploy/Dockerfile.shop
+    autoDeployTrigger: 'off'
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: '3000'
+
+  - name: lavka-monitoring-slavques
+    type: web
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerContext: ./monitoring
+    dockerfilePath: ./monitoring/hosted/Dockerfile
+    autoDeployTrigger: 'off'
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: '3000'
+      - key: SHOP_METRICS_TARGET
+        fromService:
+          type: web
+          name: lavka-qa-slavques
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: SHOP_METRICS_SCHEME
+        value: https
+      - key: GF_SERVER_ROOT_URL
+        fromService:
+          type: web
+          name: lavka-monitoring-slavques
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: GF_SECURITY_COOKIE_SECURE
+        value: 'true'
+      - key: GF_SECURITY_ADMIN_PASSWORD
+        generateValue: true
+      - key: GRAFANA_PUBLIC_DASHBOARD_TOKEN
+        sync: false
